@@ -1,7 +1,6 @@
 const { graphqlHTTP } = require('express-graphql');
 const express = require('express');
 
-const { applySecurityMiddleware, csrfProtect } = require('./middleware/security');
 const { citySchema } = require('./schema/citySchema');
 const { getCity, getCities } = require('./resolvers/cityResolvers');
 
@@ -10,10 +9,12 @@ global.URLSearchParams = URLSearchParams;
 
 const app = express();
 
-// Uncomment the lines below once a session store is configured:
+// Security middleware (helmet, session, CSRF) is available in
+// middleware/security.js — uncomment below once a session store is configured:
+//
+// const { applySecurityMiddleware, csrfProtect } = require('./middleware/security');
 // applySecurityMiddleware(app, store);
-
-// CSRF-protected routes (require session + store to be configured first)
+//
 // app.get('/form', csrfProtect, function (req, res) {
 //   res.render('send', { csrfToken: req.csrfToken() });
 // });
