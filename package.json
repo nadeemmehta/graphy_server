@@ -1,7 +1,20 @@
 {
+  "name": "graphy_server",
+  "version": "1.0.0",
+  "description": "Express GraphQL server for US city data",
+  "main": "graphserver.js",
+  "scripts": {
+    "start": "node graphserver.js"
+  },
   "dependencies": {
+    "cookie-parser": "^1.4.6",
+    "cors": "^2.8.5",
+    "csrf-csrf": "^4.0.3",
     "express": "^4.18.1",
     "express-graphql": "^0.12.0",
-    "graphql": "^15.8.0"
+    "express-rate-limit": "^7.1.4",
+    "express-session": "^1.17.3",
+    "graphql": "^15.8.0",
+    "helmet": "^7.1.0"
   }
 }

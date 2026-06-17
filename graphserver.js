@@ -3,38 +3,83 @@ const { buildSchema } = require('graphql');
 const fs = require('fs');
 const express = require('express');
 const session = require('express-session');
+const helmet = require('helmet');
+const cors = require('cors');
+const { doubleCsrf } = require('csrf-csrf');
+const cookieParser = require('cookie-parser');
+const rateLimit = require('express-rate-limit');
+
 const app = express();
 
-Uncomment the lines of code  which have been commented below to make the application secure
-const helmet = require('helmet')
-const csrf = require('csurf');
+const isProduction = process.env.NODE_ENV === 'production';
 
-app.use(helmet)
-app.use(express.csrf());
+// Security headers
+app.use(helmet());
 
-// Middlewares
-const csrfProtect = csrf({ cookie: true })
-app.get('/form', csrfProtect, function(req, res) {
-res.render('send', { csrfToken: req.csrfToken() })
-})
-app.post('/posts/create', parseForm, csrfProtect, function(req, res) {
-res.send('data is being processed')
-})
+// CORS — restrict origins in production
+const allowedOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',')
+  : ['http://localhost:4000'];
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true,
+}));
 
+// Body parsers
+app.use(express.json());
+const parseForm = express.urlencoded({ extended: false });
+app.use(parseForm);
+app.use(cookieParser());
+
+// Rate limiting on all routes
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use(limiter);
+
+// Session — secret from env, never hardcoded
+const sessionSecret = process.env.SESSION_SECRET;
+if (!sessionSecret) {
+  console.warn(
+    'WARNING: SESSION_SECRET is not set. Using an insecure default. ' +
+    'Set SESSION_SECRET in your environment before deploying to production.'
+  );
+}
 const sessionConfig = {
-  secret: 'hsbqiz2208!',
+  secret: sessionSecret || 'change-me-before-production',
   name: 'graphy',
   resave: false,
   saveUninitialized: false,
-  store: store,
-  cookie : {
+  // Use a persistent store (e.g. connect-redis) in production
+  cookie: {
     sameSite: 'strict',
-  }
+    httpOnly: true,
+    secure: isProduction,
+  },
 };
+app.use(session(sessionConfig));
+
+// CSRF protection (Double Submit Cookie pattern)
+const csrfSecret = process.env.CSRF_SECRET || sessionSecret || 'change-me-before-production';
+const { generateToken, doubleCsrfProtection } = doubleCsrf({
+  getSecret: () => csrfSecret,
+  getSessionIdentifier: (req) => req.session && req.session.id,
+  cookieName: '__csrf',
+  cookieOptions: { sameSite: 'strict', secure: isProduction, httpOnly: true },
+});
+app.get('/form', doubleCsrfProtection, function (req, res) {
+  const csrfToken = generateToken(req, res);
+  res.render('send', { csrfToken });
+});
+app.post('/posts/create', doubleCsrfProtection, function (req, res) {
+  res.send('data is being processed');
+});
 
 const { URLSearchParams } = require('url');
 global.URLSearchParams = URLSearchParams;
-
 
 let rawdata = fs.readFileSync('UScities.json');
 let USCities = JSON.parse(rawdata);
@@ -51,38 +96,37 @@ let schema = buildSchema(`
     }
 `);
 
-let getCity = function(args) { 
-    let name = args.name;
-    return USCities.filter(city => {
-        return city.city == name;
-    })[0];
-}
-
-let getCities = function(args) {
-    if (args.state) {
-        let state = args.state;
-        return USCities.filter(city => city.state === state);
-    } else {
-        return USCities;
-    }
-}
-
-var root = {
-    city: getCity,
-    cities: getCities
+let getCity = function (args) {
+  let name = args.name;
+  return USCities.filter(city => {
+    return city.city == name;
+  })[0];
 };
 
-// Create an express server and a GraphQL endpoint
+let getCities = function (args) {
+  if (args.state) {
+    let state = args.state;
+    return USCities.filter(city => city.state === state);
+  } else {
+    return USCities;
+  }
+};
 
+var root = {
+  city: getCity,
+  cities: getCities,
+};
 
+// GraphQL endpoint — disable GraphiQL in production
 app.use('/graphql', graphqlHTTP({
-    schema: schema,
-    rootValue: root,
-    graphiql: true
+  schema: schema,
+  rootValue: root,
+  graphiql: !isProduction,
 }));
 
 app.get('/', (req, res) => {
-    res.send("Copy the URL from the address-bar, to paste in Postman to use GrpahQL")
-  })
-  
-app.listen(4000, () => console.log('Express GraphQL Server Now Running On port 4000/graphql'));
+  res.send('Copy the URL from the address-bar, to paste in Postman to use GraphQL');
+});
+
+const port = process.env.PORT || 4000;
+app.listen(port, () => console.log(`Express GraphQL Server Now Running On port ${port}/graphql`));
