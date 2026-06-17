@@ -3,7 +3,8 @@ COPY graphserver.js .
 COPY package.json .
 COPY UScities.json .
 RUN npm install &&\
-    apk update &&\
-    apk upgrade
+    apt-get update &&\
+    apt-get upgrade -y &&\
+    rm -rf /var/lib/apt/lists/*
 EXPOSE  4000
 CMD node graphserver.js

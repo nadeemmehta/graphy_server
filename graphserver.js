@@ -2,42 +2,31 @@ const { graphqlHTTP } = require('express-graphql');
 const { buildSchema } = require('graphql');
 const fs = require('fs');
 const express = require('express');
-const session = require('express-session');
 const app = express();
 
-Uncomment the lines of code  which have been commented below to make the application secure
-const helmet = require('helmet')
-const csrf = require('csurf');
-
-app.use(helmet)
-app.use(express.csrf());
-
-// Middlewares
-const csrfProtect = csrf({ cookie: true })
-app.get('/form', csrfProtect, function(req, res) {
-res.render('send', { csrfToken: req.csrfToken() })
-})
-app.post('/posts/create', parseForm, csrfProtect, function(req, res) {
-res.send('data is being processed')
-})
-
-const sessionConfig = {
-  secret: 'hsbqiz2208!',
-  name: 'graphy',
-  resave: false,
-  saveUninitialized: false,
-  store: store,
-  cookie : {
-    sameSite: 'strict',
-  }
-};
+// TODO: Install and enable security middleware (helmet, csurf) for production use.
+// const helmet = require('helmet');
+// const csrf = require('csurf');
+// app.use(helmet());
 
 const { URLSearchParams } = require('url');
 global.URLSearchParams = URLSearchParams;
 
+let rawdata;
+try {
+    rawdata = fs.readFileSync('UScities.json');
+} catch (err) {
+    console.error(`Failed to read UScities.json: ${err.message}`);
+    process.exit(1);
+}
 
-let rawdata = fs.readFileSync('UScities.json');
-let USCities = JSON.parse(rawdata);
+let USCities;
+try {
+    USCities = JSON.parse(rawdata);
+} catch (err) {
+    console.error(`Failed to parse UScities.json: ${err.message}`);
+    process.exit(1);
+}
 
 // GraphQL schema
 let schema = buildSchema(`
@@ -51,11 +40,18 @@ let schema = buildSchema(`
     }
 `);
 
-let getCity = function(args) { 
+let getCity = function(args) {
+    if (!args.name) {
+        throw new Error('A "name" argument is required to look up a city');
+    }
     let name = args.name;
-    return USCities.filter(city => {
+    let result = USCities.filter(city => {
         return city.city == name;
     })[0];
+    if (!result) {
+        throw new Error(`City not found: ${name}`);
+    }
+    return result;
 }
 
 let getCities = function(args) {
@@ -73,16 +69,32 @@ var root = {
 };
 
 // Create an express server and a GraphQL endpoint
-
-
 app.use('/graphql', graphqlHTTP({
     schema: schema,
     rootValue: root,
-    graphiql: true
+    graphiql: true,
+    customFormatErrorFn: (err) => {
+        console.error('GraphQL error:', err.message);
+        return { message: err.message, locations: err.locations };
+    }
 }));
 
 app.get('/', (req, res) => {
-    res.send("Copy the URL from the address-bar, to paste in Postman to use GrpahQL")
-  })
-  
-app.listen(4000, () => console.log('Express GraphQL Server Now Running On port 4000/graphql'));
+    res.send("Copy the URL from the address-bar, to paste in Postman to use GraphQL")
+})
+
+// Global error handling middleware
+app.use((err, req, res, next) => {
+    console.error('Unhandled error:', err.stack || err.message);
+    res.status(500).json({ error: 'Internal server error' });
+});
+
+const server = app.listen(4000, () => console.log('Express GraphQL Server Now Running On port 4000/graphql'));
+server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+        console.error('Port 4000 is already in use. Please free the port or use a different one.');
+    } else {
+        console.error(`Failed to start server: ${err.message}`);
+    }
+    process.exit(1);
+});
