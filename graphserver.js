@@ -1,88 +1,39 @@
 const { graphqlHTTP } = require('express-graphql');
-const { buildSchema } = require('graphql');
-const fs = require('fs');
 const express = require('express');
-const session = require('express-session');
-const app = express();
 
-Uncomment the lines of code  which have been commented below to make the application secure
-const helmet = require('helmet')
-const csrf = require('csurf');
-
-app.use(helmet)
-app.use(express.csrf());
-
-// Middlewares
-const csrfProtect = csrf({ cookie: true })
-app.get('/form', csrfProtect, function(req, res) {
-res.render('send', { csrfToken: req.csrfToken() })
-})
-app.post('/posts/create', parseForm, csrfProtect, function(req, res) {
-res.send('data is being processed')
-})
-
-const sessionConfig = {
-  secret: 'hsbqiz2208!',
-  name: 'graphy',
-  resave: false,
-  saveUninitialized: false,
-  store: store,
-  cookie : {
-    sameSite: 'strict',
-  }
-};
+const { applySecurityMiddleware, csrfProtect } = require('./middleware/security');
+const { citySchema } = require('./schema/citySchema');
+const { getCity, getCities } = require('./resolvers/cityResolvers');
 
 const { URLSearchParams } = require('url');
 global.URLSearchParams = URLSearchParams;
 
+const app = express();
 
-let rawdata = fs.readFileSync('UScities.json');
-let USCities = JSON.parse(rawdata);
+// Uncomment the lines below once a session store is configured:
+// applySecurityMiddleware(app, store);
 
-// GraphQL schema
-let schema = buildSchema(`
-    type Query {
-        city(name: String): City
-        cities(state: String): [City]
-    },
-    type City {
-        city: String
-        state: String
-    }
-`);
+// CSRF-protected routes (require session + store to be configured first)
+// app.get('/form', csrfProtect, function (req, res) {
+//   res.render('send', { csrfToken: req.csrfToken() });
+// });
+// app.post('/posts/create', express.urlencoded({ extended: false }), csrfProtect, function (req, res) {
+//   res.send('data is being processed');
+// });
 
-let getCity = function(args) { 
-    let name = args.name;
-    return USCities.filter(city => {
-        return city.city == name;
-    })[0];
-}
-
-let getCities = function(args) {
-    if (args.state) {
-        let state = args.state;
-        return USCities.filter(city => city.state === state);
-    } else {
-        return USCities;
-    }
-}
-
-var root = {
-    city: getCity,
-    cities: getCities
+const root = {
+  city: getCity,
+  cities: getCities,
 };
 
-// Create an express server and a GraphQL endpoint
-
-
 app.use('/graphql', graphqlHTTP({
-    schema: schema,
-    rootValue: root,
-    graphiql: true
+  schema: citySchema,
+  rootValue: root,
+  graphiql: true,
 }));
 
 app.get('/', (req, res) => {
-    res.send("Copy the URL from the address-bar, to paste in Postman to use GrpahQL")
-  })
-  
+  res.send('Copy the URL from the address-bar, to paste in Postman to use GraphQL');
+});
+
 app.listen(4000, () => console.log('Express GraphQL Server Now Running On port 4000/graphql'));
