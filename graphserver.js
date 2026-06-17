@@ -5,7 +5,7 @@ const express = require('express');
 const session = require('express-session');
 const helmet = require('helmet');
 const cors = require('cors');
-const csrf = require('csurf');
+const { doubleCsrf } = require('csrf-csrf');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 
@@ -62,12 +62,19 @@ const sessionConfig = {
 };
 app.use(session(sessionConfig));
 
-// CSRF protection
-const csrfProtect = csrf({ cookie: true });
-app.get('/form', csrfProtect, function (req, res) {
-  res.render('send', { csrfToken: req.csrfToken() });
+// CSRF protection (Double Submit Cookie pattern)
+const csrfSecret = process.env.CSRF_SECRET || sessionSecret || 'change-me-before-production';
+const { generateToken, doubleCsrfProtection } = doubleCsrf({
+  getSecret: () => csrfSecret,
+  getSessionIdentifier: (req) => req.session && req.session.id,
+  cookieName: '__csrf',
+  cookieOptions: { sameSite: 'strict', secure: isProduction, httpOnly: true },
 });
-app.post('/posts/create', csrfProtect, function (req, res) {
+app.get('/form', doubleCsrfProtection, function (req, res) {
+  const csrfToken = generateToken(req, res);
+  res.render('send', { csrfToken });
+});
+app.post('/posts/create', doubleCsrfProtection, function (req, res) {
   res.send('data is being processed');
 });
 
